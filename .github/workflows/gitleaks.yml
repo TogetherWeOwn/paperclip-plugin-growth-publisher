@@ -1,0 +1,17 @@
+# Full-history scan from the organisation template, using a checksum-pinned free CLI.
+name: gitleaks
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  gitleaks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Scan full history (also runs inside every CI aggregate)
+        run: bash .github/scripts/scan-secrets.sh

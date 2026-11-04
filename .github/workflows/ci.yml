@@ -1,0 +1,99 @@
+# Adapted from TogetherWeOwn/.github workflow-templates/starter-ci.yml at
+# bf952239a4ae65ab09f1944e2501f018fd04f384. No deployment or package publication.
+name: CI
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  merge_group: {}
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch: {}
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  changes:
+    uses: TogetherWeOwn/.github/.github/workflows/changes.yml@773ee91a904b9e1b65eddaaad4400d36e05fa717
+    with:
+      areas-json: '{"publisher":["src/**","test/**","migrations/**"],"docs":["*.md","docs/**"]}'
+      full-run-globs-json: '["package.json","**/package.json","package-lock.json","**/package-lock.json","npm-shrinkwrap.json","**/npm-shrinkwrap.json","tsconfig*.json","**/tsconfig*.json",".github/**"]'
+      docs-areas-json: '["docs"]'
+  lint:
+    needs: [changes]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24.21.0'
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run typecheck
+      - name: Lint workflows with checksum-pinned tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          actionlint=$(mktemp -d "$RUNNER_TEMP/actionlint.XXXXXX")
+          curl -fsSL -o "$actionlint/archive.tgz" https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_amd64.tar.gz
+          printf '%s  %s\n' 023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757 "$actionlint/archive.tgz" | sha256sum -c -
+          tar -xzf "$actionlint/archive.tgz" -C "$actionlint" actionlint
+          "$actionlint/actionlint" -shellcheck= -pyflakes=
+          zizmor=$(mktemp -d "$RUNNER_TEMP/zizmor.XXXXXX")
+          curl -fsSL -o "$zizmor/archive.tgz" https://github.com/zizmorcore/zizmor/releases/download/v1.32.0/zizmor-x86_64-unknown-linux-gnu.tar.gz
+          printf '%s  %s\n' bb110cc765eca9cd7efb2e284a956be5974c60027b0970f16397d86208a9957b "$zizmor/archive.tgz" | sha256sum -c -
+          tar -xzf "$zizmor/archive.tgz" -C "$zizmor" zizmor
+          env -u GH_TOKEN -u GITHUB_TOKEN "$zizmor/zizmor" --offline .github/workflows
+  fixtures:
+    needs: [changes]
+    if: github.event_name != 'pull_request' || needs.changes.outputs.full_run == 'true' || (fromJSON(needs.changes.outputs.areas).publisher && github.event.pull_request.draft == false)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24.21.0'
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm test
+      - run: npm run build
+      - name: Verify locked dependencies remain unchanged
+        run: git diff --exit-code -- package-lock.json
+  secret-scan:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: bash .github/scripts/scan-secrets.sh
+  ci-ok:
+    if: always()
+    needs: [changes, lint, fixtures, secret-scan]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Aggregate required results
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          python3 -I - <<'PY'
+          import json, os, sys
+          needs = json.loads(os.environ['NEEDS_JSON'])
+          failed = {k: v['result'] for k, v in needs.items() if v['result'] not in ('success', 'skipped')}
+          if failed:
+              print(f'Failing jobs: {failed}')
+              sys.exit(1)
+          print('ci-ok: every dependency succeeded or was intentionally skipped')
+          PY

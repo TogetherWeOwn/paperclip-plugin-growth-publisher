@@ -1,0 +1,49 @@
+name: PR lint
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+  merge_group: {}
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: pr-lint-${{ github.event_name }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  pr-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fetch immutable organisation lint standard (no target checkout)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: TogetherWeOwn/.github
+          ref: bf952239a4ae65ab09f1944e2501f018fd04f384
+          sparse-checkout: workflow-templates/pr-lint.yml
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Run pinned template's validator unchanged
+        env:
+          REQUIRE_CARD_REF: "false"
+          INTERNAL_ID_LEVEL: "error"
+          INTERNAL_ID_PREFIXES: "TWO,TOG,PAP,PAPA"
+          STRICT_INTERNAL_LEVEL: "error"
+          PR_STANDARDS_MODE: "error"
+          EVENT: ${{ github.event_name }}
+          TITLE: ${{ github.event.pull_request.title }}
+          BODY: ${{ github.event.pull_request.body }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+          COMMITS: ${{ toJSON(github.event.commits) }}
+        run: |
+          python3 -I - <<'PY'
+          from pathlib import Path
+          source = Path('workflow-templates/pr-lint.yml').read_text()
+          start = "          python3 - <<'PYEOF'\n"
+          end = '          PYEOF'
+          assert source.count(start) == 1 and source.count(end) == 1
+          block = source.split(start, 1)[1].split(end, 1)[0]
+          assert all(not line or line.startswith('          ') for line in block.splitlines())
+          program = '\n'.join(line[10:] for line in block.splitlines())
+          exec(compile(program, 'pinned-org-pr-lint', 'exec'), {'__name__': '__main__'})
+          PY

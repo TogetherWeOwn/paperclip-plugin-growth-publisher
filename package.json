@@ -1,0 +1,25 @@
+{
+  "name": "@togetherweown/paperclip-plugin-growth-publisher",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Offline fixture-only publisher foundation; no live authority or delivery adapters",
+  "license": "MIT",
+  "type": "module",
+  "engines": { "node": ">=24.21.0" },
+  "repository": { "type": "git", "url": "https://github.com/TogetherWeOwn/paperclip-plugin-growth-publisher" },
+  "exports": { ".": "./dist/index.js", "./testing": "./dist/testing.js" },
+  "files": ["dist", "migrations", "README.md", "LICENSE"],
+  "paperclipPlugin": { "manifest": "./dist/manifest.js", "worker": "./dist/worker.js" },
+  "scripts": {
+    "test": "node --disable-warning=ExperimentalWarning --test --test-timeout=30000 --import ./test/no-network.ts test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "check": "npm run typecheck && npm test && npm run build"
+  },
+  "peerDependencies": { "@paperclipai/plugin-sdk": "2026.1023.0" },
+  "devDependencies": {
+    "@paperclipai/plugin-sdk": "2026.1023.0",
+    "@types/node": "24.19.2",
+    "typescript": "5.9.3"
+  }
+}

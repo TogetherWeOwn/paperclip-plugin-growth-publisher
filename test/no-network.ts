@@ -1,0 +1,12 @@
+import http from 'node:http';
+import https from 'node:https';
+import net from 'node:net';
+import tls from 'node:tls';
+import dgram from 'node:dgram';
+import { syncBuiltinESMExports } from 'node:module';
+const denied = (): never => { throw new Error('network-disabled-in-offline-tests'); };
+globalThis.fetch = denied;
+http.request = denied; http.get = denied; https.request = denied; https.get = denied;
+net.connect = denied; net.createConnection = denied; net.Socket.prototype.connect = denied;
+tls.connect = denied; dgram.createSocket = denied;
+syncBuiltinESMExports();
